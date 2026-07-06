@@ -5,7 +5,7 @@ const path = require('node:path');
 const dotenv = require('dotenv');
 const QRCode = require('qrcode');
 
-const EVENT_PREFIX = 'SM3000_EVENT ';
+const APP_EVENT_CHANNEL = 'sm3000:event';
 
 const DEFAULT_CONFIG = {
   TARGET_CONTACT_IDS: '',
@@ -306,17 +306,14 @@ async function handleMonitorEvent(event) {
   }
 }
 
-function handleMonitorLine(line, level) {
-  if (line.startsWith(EVENT_PREFIX)) {
-    try {
-      handleMonitorEvent(JSON.parse(line.slice(EVENT_PREFIX.length)));
-    } catch (error) {
-      appendLog(`Invalid monitor event: ${error.message}`, 'warn');
-    }
+function handleMonitorMessage(message) {
+  if (message?.channel !== APP_EVENT_CHANNEL || !message.event || typeof message.event !== 'object') {
     return;
   }
 
-  appendLog(line, level);
+  handleMonitorEvent(message.event).catch((error) => {
+    appendLog(`Invalid monitor event: ${error.message}`, 'warn');
+  });
 }
 
 function wireMonitorStream(stream, level) {
@@ -327,7 +324,7 @@ function wireMonitorStream(stream, level) {
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() || '';
     for (const line of lines) {
-      handleMonitorLine(line, level);
+      appendLog(line, level);
     }
   });
 }
@@ -358,6 +355,7 @@ function startMonitor() {
 
   wireMonitorStream(monitorProcess.stdout, 'info');
   wireMonitorStream(monitorProcess.stderr, 'error');
+  monitorProcess.on('message', handleMonitorMessage);
 
   monitorProcess.on('error', (error) => {
     monitorStatus = 'Needs attention';

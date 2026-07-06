@@ -168,6 +168,20 @@ label {
   overflow-wrap: anywhere;
 }
 
+.compliance-panel {
+  grid-column: 1 / -1;
+  border-color: #c9d7d1;
+  background: #f7fbf9;
+}
+
+.compliance-panel p {
+  max-width: 900px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .qr-panel {
   grid-column: 1 / -1;
   display: flex;

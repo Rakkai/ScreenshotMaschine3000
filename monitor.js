@@ -15,6 +15,7 @@ require('dotenv').config({
 });
 
 const APP_BRIDGE = process.env.APP_BRIDGE === '1';
+const APP_EVENT_CHANNEL = 'sm3000:event';
 const PATH_BASE = path.resolve(process.env.APP_DATA_DIR || (CONFIG_FILE ? path.dirname(CONFIG_FILE) : process.cwd()));
 const SCREENSHOT_DIR = resolveConfiguredPath(process.env.SCREENSHOT_DIR, './screenshots');
 const LOCAL_AUTH_PATH = resolveConfiguredPath(process.env.LOCAL_AUTH_PATH, './.wwebjs_auth');
@@ -34,6 +35,17 @@ const RECONNECT_MAX_MS = Number(process.env.RECONNECT_MAX_MS || 120000);
 const LOG_TO_FILE = String(process.env.LOG_TO_FILE || 'true').toLowerCase() === 'true';
 const LOG_FILE = resolveConfiguredPath(process.env.LOG_FILE, './logs/monitor.log');
 const PUPPETEER_EXECUTABLE_PATH = (process.env.PUPPETEER_EXECUTABLE_PATH || '').trim();
+const WHATSAPP_CHAT_WINDOW_SELECTORS = [
+  '#main',
+  '[data-testid="conversation-panel-wrapper"]',
+  '[data-testid="conversation-panel"]',
+];
+const TELEGRAM_CHAT_WINDOW_SELECTORS = [
+  '#column-center',
+  '.middle-column',
+  '.chat.tabs-tab.active',
+  '.chat.active',
+];
 
 function formatLogArgs(args) {
   return args
@@ -124,7 +136,12 @@ function emitAppEvent(type, payload = {}) {
   }
 
   try {
-    process.stdout.write(`SM3000_EVENT ${JSON.stringify({ type, ...payload })}\n`);
+    if (typeof process.send === 'function') {
+      process.send({
+        channel: APP_EVENT_CHANNEL,
+        event: { type, ...payload },
+      });
+    }
   } catch (_error) {
     // App events are best-effort; normal file/terminal logging remains available.
   }
@@ -175,6 +192,55 @@ function timestampForFilename(date = new Date()) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function findChatWindowClip(page, selectors) {
+  return page.evaluate((candidateSelectors) => {
+    const isVisible = (node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 240
+        && rect.height > 240
+        && style.visibility !== 'hidden'
+        && style.display !== 'none';
+    };
+
+    for (const selector of candidateSelectors) {
+      const candidates = [...document.querySelectorAll(selector)]
+        .filter(isVisible)
+        .map((node) => {
+          const rect = node.getBoundingClientRect();
+          const left = Math.max(0, rect.left);
+          const top = Math.max(0, rect.top);
+          const right = Math.min(window.innerWidth, rect.right);
+          const bottom = Math.min(window.innerHeight, rect.bottom);
+
+          return {
+            x: Math.floor(left),
+            y: Math.floor(top),
+            width: Math.ceil(right - left),
+            height: Math.ceil(bottom - top),
+          };
+        })
+        .filter((rect) => rect.width > 240 && rect.height > 240)
+        .sort((a, b) => (b.width * b.height) - (a.width * a.height));
+
+      if (candidates[0]) {
+        return candidates[0];
+      }
+    }
+
+    return null;
+  }, selectors).catch(() => null);
+}
+
+async function screenshotChatWindow(page, outputPath, selectors) {
+  const clip = await findChatWindowClip(page, selectors);
+  const options = clip
+    ? { path: outputPath, clip }
+    : { path: outputPath, fullPage: FULL_PAGE_SCREENSHOT };
+
+  await page.screenshot(options);
 }
 
 function extractPhoneFromWhatsAppId(chatId) {
@@ -290,7 +356,6 @@ async function ensureDirectories() {
 function buildClient() {
   const puppeteerOptions = {
     headless: HEADLESS,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   };
   const executablePath = findBrowserExecutable();
 
@@ -321,7 +386,6 @@ function buildTelegramLaunchOptions() {
     headless: HEADLESS,
     userDataDir: TELEGRAM_AUTH_PATH,
     defaultViewport: null,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   };
   const executablePath = findBrowserExecutable();
 
@@ -394,10 +458,7 @@ async function takeScreenshot(client, message, displayName) {
   const filename = `${ts}__${contactSegment}__${fromSegment}__${messageId}.png`;
   const outputPath = path.join(SCREENSHOT_DIR, filename);
 
-  await client.pupPage.screenshot({
-    path: outputPath,
-    fullPage: FULL_PAGE_SCREENSHOT,
-  });
+  await screenshotChatWindow(client.pupPage, outputPath, WHATSAPP_CHAT_WINDOW_SELECTORS);
 
   return outputPath;
 }
@@ -730,10 +791,7 @@ async function takeTelegramScreenshot(page, chatName, state) {
   const filename = `${ts}__Telegram__${sanitizeSegment(chatName)}__${hashSegment(state?.signature)}.png`;
   const outputPath = path.join(SCREENSHOT_DIR, filename);
 
-  await page.screenshot({
-    path: outputPath,
-    fullPage: FULL_PAGE_SCREENSHOT,
-  });
+  await screenshotChatWindow(page, outputPath, TELEGRAM_CHAT_WINDOW_SELECTORS);
 
   return outputPath;
 }
