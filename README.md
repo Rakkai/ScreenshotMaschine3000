@@ -200,6 +200,10 @@ npm run dist:win
 
 Generated installers and unpacked apps are written to `dist/`.
 
+## Development
+
+This app was developed with help from OpenAI Codex.
+
 ## Troubleshooting
 
 If the app cannot start after a fresh checkout, run `npm install`.

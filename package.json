@@ -12,8 +12,16 @@
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "whatsapp",
+    "telegram",
+    "screenshot",
+    "evidence-preservation",
+    "desktop-app",
+    "electron",
+    "puppeteer"
+  ],
+  "author": "Stefan Rack",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.4.2",
