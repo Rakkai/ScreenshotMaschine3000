@@ -254,6 +254,10 @@ label {
   margin-top: 14px;
 }
 
+.telegram-targets {
+  margin-top: 12px;
+}
+
 .files-panel,
 .settings-panel,
 .log-panel {

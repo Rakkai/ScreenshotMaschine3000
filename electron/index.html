@@ -49,12 +49,19 @@
 
         <div class="manual-targets">
           <label>
-            Contact IDs
+            WhatsApp Contact IDs
             <textarea id="targetIds" spellcheck="false" rows="4"></textarea>
           </label>
           <label>
-            Contact Names
+            WhatsApp Contact Names
             <textarea id="targetNames" spellcheck="false" rows="4"></textarea>
+          </label>
+        </div>
+
+        <div class="telegram-targets">
+          <label>
+            Telegram Chat Names
+            <textarea id="telegramChatNames" spellcheck="false" rows="3"></textarea>
           </label>
         </div>
       </section>
@@ -90,6 +97,14 @@
           <label>
             Log File
             <input id="logFile" type="text" spellcheck="false">
+          </label>
+          <label>
+            Telegram Auth Path
+            <input id="telegramAuthPath" type="text" spellcheck="false">
+          </label>
+          <label>
+            Telegram Poll (ms)
+            <input id="telegramPoll" type="number" min="1000" step="500">
           </label>
           <label>
             Message Wait (ms)

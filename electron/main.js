@@ -12,6 +12,10 @@ const DEFAULT_CONFIG = {
   TARGET_CONTACT_NAMES: '',
   TARGET_CONTACT_ID: '',
   TARGET_CONTACT_NAME: '',
+  TELEGRAM_TARGET_CHAT_NAMES: '',
+  TELEGRAM_AUTH_PATH: './.telegram_auth',
+  TELEGRAM_POLL_MS: '3000',
+  TELEGRAM_WEB_URL: 'https://web.telegram.org/k/',
   SCREENSHOT_DIR: './screenshots',
   LOCAL_AUTH_PATH: './.wwebjs_auth',
   HEADLESS: 'false',
@@ -82,6 +86,7 @@ function buildEnvContent(values, extraValues = {}) {
   next.TARGET_CONTACT_NAMES = listValue(next.TARGET_CONTACT_NAMES);
   next.TARGET_CONTACT_ID = firstListValue(next.TARGET_CONTACT_IDS);
   next.TARGET_CONTACT_NAME = firstListValue(next.TARGET_CONTACT_NAMES);
+  next.TELEGRAM_TARGET_CHAT_NAMES = listValue(next.TELEGRAM_TARGET_CHAT_NAMES);
 
   const lines = [
     '# Screenshot Maschine 3000 configuration',
@@ -92,6 +97,12 @@ function buildEnvContent(values, extraValues = {}) {
     '# Legacy single-contact fields are kept for script compatibility.',
     `TARGET_CONTACT_ID=${formatEnvValue(next.TARGET_CONTACT_ID)}`,
     `TARGET_CONTACT_NAME=${formatEnvValue(next.TARGET_CONTACT_NAME)}`,
+    '',
+    '# Telegram Web target chats are matched by exact visible chat name.',
+    `TELEGRAM_TARGET_CHAT_NAMES=${formatEnvValue(next.TELEGRAM_TARGET_CHAT_NAMES)}`,
+    `TELEGRAM_AUTH_PATH=${formatEnvValue(next.TELEGRAM_AUTH_PATH)}`,
+    `TELEGRAM_POLL_MS=${formatEnvValue(next.TELEGRAM_POLL_MS)}`,
+    `TELEGRAM_WEB_URL=${formatEnvValue(next.TELEGRAM_WEB_URL)}`,
     '',
     '# App and monitor settings',
     `SCREENSHOT_DIR=${formatEnvValue(next.SCREENSHOT_DIR)}`,
@@ -158,6 +169,7 @@ function writeConfig(values, extra) {
   const next = readConfig().values;
   fs.mkdirSync(resolveConfigPath(next.SCREENSHOT_DIR), { recursive: true });
   fs.mkdirSync(resolveConfigPath(next.LOCAL_AUTH_PATH), { recursive: true });
+  fs.mkdirSync(resolveConfigPath(next.TELEGRAM_AUTH_PATH), { recursive: true });
   fs.mkdirSync(path.dirname(resolveConfigPath(next.LOG_FILE)), { recursive: true });
 }
 
@@ -183,6 +195,7 @@ function publicState() {
     paths: {
       screenshotDir: resolveConfigPath(config.values.SCREENSHOT_DIR),
       localAuthPath: resolveConfigPath(config.values.LOCAL_AUTH_PATH),
+      telegramAuthPath: resolveConfigPath(config.values.TELEGRAM_AUTH_PATH),
       logFile: resolveConfigPath(config.values.LOG_FILE),
     },
   };
@@ -246,6 +259,20 @@ async function handleMonitorEvent(event) {
     monitorStatus = hasTargets ? 'Monitoring' : 'Choose contacts';
     latestQrDataUrl = '';
     broadcast('ready');
+    return;
+  }
+
+  if (event.type === 'telegram-login') {
+    monitorStatus = latestQrDataUrl ? 'WhatsApp login required' : 'Telegram login required';
+    broadcast('telegram-login');
+    return;
+  }
+
+  if (event.type === 'telegram-ready') {
+    if (!latestQrDataUrl) {
+      monitorStatus = 'Monitoring';
+    }
+    broadcast('telegram-ready');
     return;
   }
 

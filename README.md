@@ -1,10 +1,10 @@
 # Screenshot Maschine 3000
 
-A desktop app that watches WhatsApp Web and saves screenshots when selected contacts send messages.
+A desktop app that watches WhatsApp Web and Telegram Web and saves screenshots when selected contacts or chats receive messages.
 
 ## Important Caveat
 
-This uses `whatsapp-web.js`, an unofficial WhatsApp Web automation library. Use it only on accounts and devices you own/control, and only for legal/authorized use.
+This uses `whatsapp-web.js`, an unofficial WhatsApp Web automation library, and browser automation for Telegram Web. Use it only on accounts and devices you own/control, and only for legal/authorized use.
 
 ## Normal Use
 
@@ -15,12 +15,13 @@ The app window lets you:
 - scan the WhatsApp login QR code
 - select one or more target contacts after WhatsApp is connected
 - enter contact IDs or exact names manually
+- enter Telegram Web chat names manually
 - choose and open the screenshot folder
 - adjust the same settings that are stored in `.env`
 - start, stop, and restart the monitor
 - see recent activity without opening a terminal
 
-Screenshots are saved as PNG files. Filenames include the local timestamp, contact display name, sender ID, and message ID.
+Screenshots are saved as PNG files. WhatsApp filenames include the local timestamp, contact display name, sender ID, and message ID. Telegram filenames include the local timestamp, chat name, and a short hash of the detected message state.
 
 ## Installers
 
@@ -70,6 +71,10 @@ TARGET_CONTACT_IDS=
 TARGET_CONTACT_NAMES=
 TARGET_CONTACT_ID=
 TARGET_CONTACT_NAME=
+TELEGRAM_TARGET_CHAT_NAMES=
+TELEGRAM_AUTH_PATH=./.telegram_auth
+TELEGRAM_POLL_MS=3000
+TELEGRAM_WEB_URL=https://web.telegram.org/k/
 SCREENSHOT_DIR=./screenshots
 LOCAL_AUTH_PATH=./.wwebjs_auth
 HEADLESS=false
@@ -85,6 +90,8 @@ PUPPETEER_EXECUTABLE_PATH=
 ```
 
 For best reliability, use contact IDs in WhatsApp JID format, for example `4917612345678@c.us`. The dashboard can fill these IDs from the WhatsApp contacts list after login.
+
+Telegram Web chats are matched by exact visible chat name. On first run, sign in inside the opened Telegram Web browser window; session data is saved in `TELEGRAM_AUTH_PATH`. Telegram monitoring polls the configured chats because Telegram Web does not expose the same incoming-message event hook as WhatsApp Web.
 
 `PUPPETEER_EXECUTABLE_PATH` is optional. The monitor tries common Chrome, Edge, and Chromium locations on macOS, Windows, and Linux.
 

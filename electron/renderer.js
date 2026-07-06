@@ -18,6 +18,7 @@ const elements = {
   clearTargetsButton: document.querySelector('#clearTargetsButton'),
   targetIds: document.querySelector('#targetIds'),
   targetNames: document.querySelector('#targetNames'),
+  telegramChatNames: document.querySelector('#telegramChatNames'),
   screenshotPath: document.querySelector('#screenshotPath'),
   screenshotDir: document.querySelector('#screenshotDir'),
   chooseScreenshotsButton: document.querySelector('#chooseScreenshotsButton'),
@@ -25,6 +26,8 @@ const elements = {
   configPath: document.querySelector('#configPath'),
   saveButton: document.querySelector('#saveButton'),
   localAuthPath: document.querySelector('#localAuthPath'),
+  telegramAuthPath: document.querySelector('#telegramAuthPath'),
+  telegramPoll: document.querySelector('#telegramPoll'),
   logFile: document.querySelector('#logFile'),
   messageWait: document.querySelector('#messageWait'),
   reconnectBase: document.querySelector('#reconnectBase'),
@@ -91,8 +94,11 @@ function renderConfig() {
   const values = state.values;
   elements.targetIds.value = joinLines(values.TARGET_CONTACT_IDS);
   elements.targetNames.value = joinLines(values.TARGET_CONTACT_NAMES);
+  elements.telegramChatNames.value = joinLines(values.TELEGRAM_TARGET_CHAT_NAMES);
   elements.screenshotDir.value = values.SCREENSHOT_DIR || '';
   elements.localAuthPath.value = values.LOCAL_AUTH_PATH || '';
+  elements.telegramAuthPath.value = values.TELEGRAM_AUTH_PATH || '';
+  elements.telegramPoll.value = values.TELEGRAM_POLL_MS || '';
   elements.logFile.value = values.LOG_FILE || '';
   elements.messageWait.value = values.MESSAGE_RENDER_WAIT_MS || '';
   elements.reconnectBase.value = values.RECONNECT_BASE_MS || '';
@@ -209,8 +215,11 @@ function collectConfig() {
       ...state.values,
       TARGET_CONTACT_IDS: splitList(elements.targetIds.value).join(','),
       TARGET_CONTACT_NAMES: splitList(elements.targetNames.value).join(','),
+      TELEGRAM_TARGET_CHAT_NAMES: splitList(elements.telegramChatNames.value).join(','),
       SCREENSHOT_DIR: elements.screenshotDir.value.trim(),
       LOCAL_AUTH_PATH: elements.localAuthPath.value.trim(),
+      TELEGRAM_AUTH_PATH: elements.telegramAuthPath.value.trim(),
+      TELEGRAM_POLL_MS: String(Math.max(1000, Number(elements.telegramPoll.value || 1000))),
       HEADLESS: boolValue(elements.headless.checked),
       FULL_PAGE_SCREENSHOT: boolValue(elements.fullPage.checked),
       AUTO_OPEN_CHAT_BEFORE_SCREENSHOT: boolValue(elements.autoOpenChat.checked),
@@ -268,6 +277,7 @@ elements.refreshContactsButton.addEventListener('click', async () => {
 elements.clearTargetsButton.addEventListener('click', () => {
   elements.targetIds.value = '';
   elements.targetNames.value = '';
+  elements.telegramChatNames.value = '';
   markFormDirty();
   renderContacts();
 });
@@ -278,6 +288,7 @@ elements.targetIds.addEventListener('input', () => {
   renderContacts();
 });
 elements.targetNames.addEventListener('input', markFormDirty);
+elements.telegramChatNames.addEventListener('input', markFormDirty);
 
 elements.chooseScreenshotsButton.addEventListener('click', async () => {
   const selected = await appApi.chooseFolder(elements.screenshotDir.value);
@@ -296,6 +307,8 @@ elements.saveButton.addEventListener('click', saveAndRestart);
 for (const input of [
   elements.screenshotDir,
   elements.localAuthPath,
+  elements.telegramAuthPath,
+  elements.telegramPoll,
   elements.logFile,
   elements.messageWait,
   elements.reconnectBase,

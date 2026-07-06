@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const qrcode = require('qrcode-terminal');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 
@@ -19,6 +20,10 @@ const SCREENSHOT_DIR = resolveConfiguredPath(process.env.SCREENSHOT_DIR, './scre
 const LOCAL_AUTH_PATH = resolveConfiguredPath(process.env.LOCAL_AUTH_PATH, './.wwebjs_auth');
 const TARGET_CONTACT_IDS_RAW = splitEnvList(process.env.TARGET_CONTACT_IDS || process.env.TARGET_CONTACT_ID || '');
 const TARGET_CONTACT_NAMES_RAW = splitEnvList(process.env.TARGET_CONTACT_NAMES || process.env.TARGET_CONTACT_NAME || '');
+const TELEGRAM_TARGET_CHAT_NAMES_RAW = splitEnvList(process.env.TELEGRAM_TARGET_CHAT_NAMES || process.env.TELEGRAM_TARGET_CHAT_NAME || '');
+const TELEGRAM_AUTH_PATH = resolveConfiguredPath(process.env.TELEGRAM_AUTH_PATH, './.telegram_auth');
+const TELEGRAM_POLL_MS = Number(process.env.TELEGRAM_POLL_MS || 3000);
+const TELEGRAM_WEB_URL = (process.env.TELEGRAM_WEB_URL || 'https://web.telegram.org/k/').trim();
 const FULL_PAGE_SCREENSHOT = String(process.env.FULL_PAGE_SCREENSHOT || 'true').toLowerCase() === 'true';
 const HEADLESS = String(process.env.HEADLESS || 'false').toLowerCase() === 'true';
 const AUTO_OPEN_CHAT_BEFORE_SCREENSHOT = String(process.env.AUTO_OPEN_CHAT_BEFORE_SCREENSHOT || 'true').toLowerCase() === 'true';
@@ -83,10 +88,12 @@ const targetContactNames = new Set(
     .map((name) => name.toLowerCase())
     .filter(Boolean)
 );
+const telegramTargetChatNames = TELEGRAM_TARGET_CHAT_NAMES_RAW.filter(Boolean);
 const resolvedTargetIds = new Set();
+let puppeteerModule;
 
-if (!hasConfiguredTargets() && !APP_BRIDGE) {
-  console.error('Missing config: set TARGET_CONTACT_IDS, TARGET_CONTACT_ID, TARGET_CONTACT_NAMES, or TARGET_CONTACT_NAME in .env');
+if (!hasConfiguredTargets() && !hasTelegramTargets() && !APP_BRIDGE) {
+  console.error('Missing config: set WhatsApp TARGET_CONTACT_* or TELEGRAM_TARGET_CHAT_NAMES in .env');
   process.exit(1);
 }
 
@@ -105,6 +112,10 @@ function splitEnvList(raw) {
 
 function hasConfiguredTargets() {
   return targetContactIds.size > 0 || targetContactNames.size > 0;
+}
+
+function hasTelegramTargets() {
+  return telegramTargetChatNames.length > 0;
 }
 
 function emitAppEvent(type, payload = {}) {
@@ -142,6 +153,14 @@ function sanitizeSegment(value) {
     .replace(/[^a-zA-Z0-9_.-]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 64) || 'unknown';
+}
+
+function hashSegment(value) {
+  return crypto
+    .createHash('sha1')
+    .update(String(value || ''))
+    .digest('hex')
+    .slice(0, 10);
 }
 
 function timestampForFilename(date = new Date()) {
@@ -265,6 +284,7 @@ async function resolveTargetByName(client, desiredName) {
 async function ensureDirectories() {
   await fsp.mkdir(SCREENSHOT_DIR, { recursive: true });
   await fsp.mkdir(LOCAL_AUTH_PATH, { recursive: true });
+  await fsp.mkdir(TELEGRAM_AUTH_PATH, { recursive: true });
 }
 
 function buildClient() {
@@ -286,6 +306,30 @@ function buildClient() {
     takeoverOnConflict: true,
     takeoverTimeoutMs: 0,
   });
+}
+
+function getPuppeteer() {
+  if (!puppeteerModule) {
+    puppeteerModule = require('puppeteer');
+  }
+
+  return puppeteerModule;
+}
+
+function buildTelegramLaunchOptions() {
+  const launchOptions = {
+    headless: HEADLESS,
+    userDataDir: TELEGRAM_AUTH_PATH,
+    defaultViewport: null,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  };
+  const executablePath = findBrowserExecutable();
+
+  if (executablePath) {
+    launchOptions.executablePath = executablePath;
+  }
+
+  return launchOptions;
 }
 
 function upsertContact(contactMap, id, label, phone) {
@@ -485,6 +529,293 @@ async function isTargetMessage(message) {
   return names.some((name) => targetContactNames.has(name));
 }
 
+async function waitForTelegramLogin(page) {
+  let announced = false;
+
+  while (true) {
+    const loggedIn = await page.evaluate(() => {
+      const text = document.body?.innerText || '';
+      const hasChatList = Boolean(document.querySelector(
+        '.chatlist, .chat-list, .dialogs-list, [class*="chatlist"], [class*="dialogs-list"]'
+      ));
+      return hasChatList || /Saved Messages|Archived Chats/i.test(text);
+    }).catch(() => false);
+
+    if (loggedIn) {
+      return;
+    }
+
+    if (!announced) {
+      announced = true;
+      emitAppEvent('telegram-login');
+      console.log('Telegram login required. Use the opened Telegram Web browser window to sign in.');
+    }
+
+    await delay(5000);
+  }
+}
+
+async function focusTelegramSearch(page) {
+  const selectors = [
+    'input[placeholder="Search"]',
+    'input[placeholder*="Search"]',
+    '.input-search input',
+    '#telegram-search-input',
+    '[contenteditable="true"][aria-label*="Search"]',
+    '[contenteditable="true"][placeholder*="Search"]',
+  ];
+
+  for (const selector of selectors) {
+    const input = await page.$(selector).catch(() => null);
+    if (!input) {
+      continue;
+    }
+
+    await input.click({ clickCount: 3 });
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await page.keyboard.down(modifier).catch(() => {});
+    await page.keyboard.press('A').catch(() => {});
+    await page.keyboard.up(modifier).catch(() => {});
+    return true;
+  }
+
+  return page.evaluate(() => {
+    const normalize = (value) => String(value || '').trim().toLowerCase();
+    const candidates = [...document.querySelectorAll('input, [contenteditable="true"], [role="searchbox"]')];
+    const input = candidates.find((node) => {
+      const text = normalize(node.getAttribute('placeholder') || node.getAttribute('aria-label') || node.textContent);
+      const rect = node.getBoundingClientRect();
+      return rect.width > 40 && rect.height > 12 && text.includes('search');
+    });
+
+    if (!input) {
+      return false;
+    }
+
+    input.focus();
+    if ('value' in input) {
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    return true;
+  });
+}
+
+async function clickTelegramChatByName(page, chatName) {
+  return page.evaluate((desiredName) => {
+    const normalize = (value) => String(value || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    const wanted = normalize(desiredName);
+    const isVisible = (node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 20 && rect.height > 12 && style.visibility !== 'hidden' && style.display !== 'none';
+    };
+    const leftSide = (node) => node.getBoundingClientRect().left < window.innerWidth * 0.58;
+    const matches = (node) => {
+      const title = normalize(node.getAttribute('title'));
+      const label = normalize(node.getAttribute('aria-label'));
+      const lines = String(node.innerText || '')
+        .split('\n')
+        .map(normalize)
+        .filter(Boolean);
+
+      return title === wanted || label === wanted || lines.includes(wanted);
+    };
+    const nodes = [...document.querySelectorAll('a, button, [role="button"], .chatlist-chat, [class*="chatlist-chat"], [class*="ListItem"]')]
+      .filter((node) => isVisible(node) && leftSide(node) && matches(node));
+
+    const node = nodes[0];
+    if (!node) {
+      return false;
+    }
+
+    const clickable = node.closest('a, button, [role="button"], .chatlist-chat, [class*="chatlist-chat"]') || node;
+    clickable.click();
+    return true;
+  }, chatName).catch(() => false);
+}
+
+async function openTelegramChat(page, chatName) {
+  if (await clickTelegramChatByName(page, chatName)) {
+    await delay(Math.max(700, MESSAGE_RENDER_WAIT_MS));
+    return true;
+  }
+
+  if (!await focusTelegramSearch(page)) {
+    return false;
+  }
+
+  await page.keyboard.type(chatName, { delay: 20 });
+  await delay(1200);
+
+  if (await clickTelegramChatByName(page, chatName)) {
+    await delay(Math.max(700, MESSAGE_RENDER_WAIT_MS));
+    return true;
+  }
+
+  await page.keyboard.press('Enter').catch(() => {});
+  await delay(Math.max(700, MESSAGE_RENDER_WAIT_MS));
+  return clickTelegramChatByName(page, chatName);
+}
+
+async function getTelegramLastMessageState(page) {
+  return page.evaluate(() => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const isVisible = (node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 30 && rect.height > 12 && style.visibility !== 'hidden' && style.display !== 'none';
+    };
+
+    const scrollables = [...document.querySelectorAll('*')]
+      .filter((node) => node.scrollHeight > node.clientHeight + 80 && node.getBoundingClientRect().left > window.innerWidth * 0.25)
+      .sort((a, b) => b.scrollHeight - a.scrollHeight);
+    if (scrollables[0]) {
+      scrollables[0].scrollTop = scrollables[0].scrollHeight;
+    }
+
+    const selectors = ['[data-message-id]', '.message', '[class*="message"]', '.bubble', '[class*="bubble"]'];
+    const seen = new Set();
+    const messages = [];
+
+    for (const selector of selectors) {
+      for (const node of document.querySelectorAll(selector)) {
+        if (seen.has(node) || !isVisible(node)) {
+          continue;
+        }
+        seen.add(node);
+
+        const rect = node.getBoundingClientRect();
+        if (rect.left < window.innerWidth * 0.22) {
+          continue;
+        }
+
+        const text = normalize(node.innerText);
+        if (!text || text.length < 2 || /^(today|yesterday|unread messages)$/i.test(text)) {
+          continue;
+        }
+
+        const className = String(node.className || '').toLowerCase();
+        const own = /\bown\b|is-out|outgoing|message-out/.test(className) || rect.left > window.innerWidth * 0.62;
+        messages.push({
+          text,
+          own,
+          bottom: rect.bottom,
+        });
+      }
+    }
+
+    messages.sort((a, b) => a.bottom - b.bottom);
+    const incoming = messages.filter((message) => !message.own);
+    const relevant = incoming.length > 0 ? incoming : messages;
+    const tail = relevant.slice(-5);
+    const latest = tail[tail.length - 1];
+
+    if (!latest) {
+      return null;
+    }
+
+    return {
+      signature: tail.map((message) => message.text).join('\n---\n'),
+      preview: latest.text.slice(0, 160),
+    };
+  }).catch(() => null);
+}
+
+async function takeTelegramScreenshot(page, chatName, state) {
+  const ts = timestampForFilename();
+  const filename = `${ts}__Telegram__${sanitizeSegment(chatName)}__${hashSegment(state?.signature)}.png`;
+  const outputPath = path.join(SCREENSHOT_DIR, filename);
+
+  await page.screenshot({
+    path: outputPath,
+    fullPage: FULL_PAGE_SCREENSHOT,
+  });
+
+  return outputPath;
+}
+
+async function runTelegramSession() {
+  const browser = await getPuppeteer().launch(buildTelegramLaunchOptions());
+  const page = await browser.newPage();
+  const lastSeenByChat = new Map();
+
+  try {
+    page.setDefaultTimeout(30_000);
+    await page.goto(TELEGRAM_WEB_URL, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    await waitForTelegramLogin(page);
+
+    console.log('Telegram Web client is ready.');
+    console.log(`Monitoring Telegram chats: ${telegramTargetChatNames.join(', ')}`);
+    emitAppEvent('telegram-ready', { targetChatNames: telegramTargetChatNames });
+
+    for (const chatName of telegramTargetChatNames) {
+      if (!await openTelegramChat(page, chatName)) {
+        console.warn(`Could not open Telegram chat "${chatName}". Will retry during polling.`);
+        continue;
+      }
+
+      const state = await getTelegramLastMessageState(page);
+      if (state?.signature) {
+        lastSeenByChat.set(chatName, state.signature);
+      }
+    }
+
+    while (true) {
+      for (const chatName of telegramTargetChatNames) {
+        try {
+          if (!await openTelegramChat(page, chatName)) {
+            console.warn(`Could not open Telegram chat "${chatName}".`);
+            continue;
+          }
+
+          const state = await getTelegramLastMessageState(page);
+          if (!state?.signature) {
+            continue;
+          }
+
+          const previous = lastSeenByChat.get(chatName);
+          if (!previous) {
+            lastSeenByChat.set(chatName, state.signature);
+            continue;
+          }
+
+          if (state.signature === previous) {
+            continue;
+          }
+
+          lastSeenByChat.set(chatName, state.signature);
+          await delay(Math.max(0, MESSAGE_RENDER_WAIT_MS));
+          const screenshotPath = await takeTelegramScreenshot(page, chatName, state);
+
+          console.log(`[${new Date().toISOString()}] Telegram message matched in ${chatName}`);
+          console.log(`Screenshot saved: ${screenshotPath}`);
+          console.log(`Message preview: ${state.preview}`);
+          console.log('');
+          emitAppEvent('screenshot', {
+            path: screenshotPath,
+            displayName: chatName,
+            from: 'telegram',
+          });
+        } catch (error) {
+          console.error(`Failed to process Telegram chat "${chatName}":`, error);
+          emitAppEvent('error', { message: error?.message || String(error) });
+        }
+      }
+
+      await delay(Math.max(1000, TELEGRAM_POLL_MS));
+    }
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 function attachClientHandlers(client) {
   client.on('qr', (qr) => {
     emitAppEvent('qr', { qr });
@@ -626,9 +957,7 @@ async function runClientSession() {
   }
 }
 
-async function main() {
-  await ensureDirectories();
-
+async function runWhatsAppForever() {
   let reconnectAttempts = 0;
 
   while (true) {
@@ -650,6 +979,51 @@ async function main() {
     console.log(`Reconnecting in ${Math.round(waitMs / 1000)}s...`);
     await delay(waitMs);
   }
+}
+
+async function runTelegramForever() {
+  let reconnectAttempts = 0;
+
+  while (true) {
+    try {
+      await runTelegramSession();
+      reconnectAttempts = 0;
+      console.log('Telegram session ended. Reconnecting...');
+    } catch (error) {
+      reconnectAttempts += 1;
+      const waitMs = reconnectDelayMs(reconnectAttempts);
+      console.error(`Telegram connection error: ${error?.message || error}`);
+      console.log(`Retrying Telegram in ${Math.round(waitMs / 1000)}s...`);
+      await delay(waitMs);
+      continue;
+    }
+
+    reconnectAttempts += 1;
+    const waitMs = reconnectDelayMs(reconnectAttempts);
+    console.log(`Reconnecting Telegram in ${Math.round(waitMs / 1000)}s...`);
+    await delay(waitMs);
+  }
+}
+
+async function main() {
+  await ensureDirectories();
+
+  const sessions = [];
+
+  if (hasConfiguredTargets() || (APP_BRIDGE && !hasTelegramTargets())) {
+    sessions.push(runWhatsAppForever());
+  }
+
+  if (hasTelegramTargets()) {
+    sessions.push(runTelegramForever());
+  }
+
+  if (sessions.length === 0) {
+    console.error('No WhatsApp or Telegram targets configured.');
+    return;
+  }
+
+  await Promise.all(sessions);
 }
 
 main().catch((error) => {
