@@ -204,6 +204,12 @@ Generated installers and unpacked apps are written to `dist/`.
 
 This app was developed with help from OpenAI Codex.
 
+## Community
+
+- Read `CONTRIBUTING.md` before opening issues or pull requests.
+- Follow `CODE_OF_CONDUCT.md` in project discussions.
+- Report security issues using `SECURITY.md`; do not post exploit details or private data publicly.
+
 ## Troubleshooting
 
 If the app cannot start after a fresh checkout, run `npm install`.

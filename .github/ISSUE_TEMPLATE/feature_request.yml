@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest an improvement that fits the project's authorized-use purpose.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep requests focused on personal, authorized evidence preservation.
+
+        Requests for hidden monitoring, credential capture, session extraction, or unauthorized account access are out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should change?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Is there a simpler workaround or smaller version of this change?
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: This request is for accounts, chats, contacts, and devices controlled by the user.
+          required: true
+        - label: This request does not involve hidden monitoring, credential capture, or sending private evidence to third-party services.
+          required: true
