@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Einrichtung fuer Screenshot Maschine 3000 (Desktop-Verknuepfung + Autostart).
+  Einrichtung fuer Screenshot Maschine 3000 (Dashboard-Verknuepfung + Autostart).
 
 .DESCRIPTION
   - Prueft Node.js
@@ -21,8 +21,7 @@ $WindowsDir = $PSScriptRoot
 $ProjectRoot = Split-Path -Parent $WindowsDir
 $TaskName = 'ScreenshotMaschine3000'
 $ShortcutName = 'Screenshot Maschine 3000.lnk'
-$StartBat = Join-Path $WindowsDir 'start-monitor.bat'
-$BackgroundVbs = Join-Path $WindowsDir 'start-monitor-background.vbs'
+$BackgroundVbs = Join-Path $WindowsDir 'start-dashboard-background.vbs'
 
 function Write-Step([string]$Message) {
     Write-Host "-> $Message" -ForegroundColor Cyan
@@ -83,7 +82,7 @@ if (-not (Test-Path -LiteralPath $EnvFile)) {
     }
     Copy-Item -LiteralPath $EnvExample -Destination $EnvFile
     Write-Host '   .env wurde aus .env.example erstellt.' -ForegroundColor Yellow
-    Write-Host '   BITTE .env bearbeiten: TARGET_CONTACT_ID oder TARGET_CONTACT_NAME setzen!' -ForegroundColor Yellow
+    Write-Host '   Kontakte koennen im Dashboard ausgewaehlt werden.' -ForegroundColor Yellow
 }
 else {
     Write-Host '   .env vorhanden.'
@@ -98,10 +97,11 @@ if (-not $SkipDesktopShortcut) {
     $ShortcutPath = Join-Path $Desktop $ShortcutName
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-    $Shortcut.TargetPath = $StartBat
+    $Shortcut.TargetPath = "$env:SystemRoot\System32\wscript.exe"
+    $Shortcut.Arguments = "`"$BackgroundVbs`""
     $Shortcut.WorkingDirectory = $ProjectRoot
     $Shortcut.WindowStyle = 1
-    $Shortcut.Description = 'WhatsApp Screenshot-Ueberwachung starten'
+    $Shortcut.Description = 'Screenshot Maschine 3000 Dashboard starten'
     $Shortcut.IconLocation = "$env:SystemRoot\System32\imageres.dll,69"
     $Shortcut.Save()
     Write-Host "   Verknuepfung: $ShortcutPath"
@@ -146,8 +146,8 @@ Write-Host ''
 Write-Host 'Fertig!' -ForegroundColor Green
 Write-Host ''
 Write-Host 'Naechste Schritte:'
-Write-Host '  1. .env pruefen (Kontakt-ID oder -Name eintragen)'
-Write-Host '  2. Desktop-Verknuepfung doppelklicken'
-Write-Host '  3. Beim ersten Mal QR-Code mit WhatsApp scannen (Einstellungen -> Verknuepfte Geraete)'
-Write-Host '  4. Danach startet das Programm bei jedem PC-Neustart automatisch'
+Write-Host '  1. Desktop-Verknuepfung doppelklicken'
+Write-Host '  2. Beim ersten Mal QR-Code im Appfenster mit WhatsApp scannen'
+Write-Host '  3. Zielkontakte im Dashboard auswaehlen und speichern'
+Write-Host '  4. Danach startet das Dashboard bei jedem PC-Neustart automatisch'
 Write-Host ''

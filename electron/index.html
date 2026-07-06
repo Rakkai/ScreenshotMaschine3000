@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screenshot Maschine 3000</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>Screenshot Maschine 3000</h1>
+        <div class="status-row">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="monitorStatus">Loading</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="startButton" type="button">Start</button>
+        <button id="stopButton" type="button" class="secondary">Stop</button>
+        <button id="restartButton" type="button" class="secondary">Restart</button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="qrPanel" class="panel qr-panel hidden">
+        <div>
+          <h2>WhatsApp Login</h2>
+          <p>Scan in WhatsApp Linked Devices.</p>
+        </div>
+        <img id="qrImage" alt="WhatsApp login QR code">
+      </section>
+
+      <section class="panel contacts-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Target Contacts</h2>
+            <p id="contactCount">No contacts loaded</p>
+          </div>
+          <button id="refreshContactsButton" type="button" class="secondary">Refresh</button>
+        </div>
+
+        <div class="contact-tools">
+          <input id="contactSearch" type="search" placeholder="Search contacts">
+          <button id="clearTargetsButton" type="button" class="secondary">Clear</button>
+        </div>
+
+        <div id="contactsList" class="contacts-list"></div>
+
+        <div class="manual-targets">
+          <label>
+            Contact IDs
+            <textarea id="targetIds" spellcheck="false" rows="4"></textarea>
+          </label>
+          <label>
+            Contact Names
+            <textarea id="targetNames" spellcheck="false" rows="4"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel files-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Screenshots</h2>
+            <p id="screenshotPath"></p>
+          </div>
+          <button id="openScreenshotsButton" type="button">Open Folder</button>
+        </div>
+        <div class="path-row">
+          <input id="screenshotDir" type="text" spellcheck="false">
+          <button id="chooseScreenshotsButton" type="button" class="secondary">Choose</button>
+        </div>
+      </section>
+
+      <section class="panel settings-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Settings</h2>
+            <p id="configPath"></p>
+          </div>
+          <button id="saveButton" type="button">Save</button>
+        </div>
+
+        <div class="settings-grid">
+          <label>
+            Local Auth Path
+            <input id="localAuthPath" type="text" spellcheck="false">
+          </label>
+          <label>
+            Log File
+            <input id="logFile" type="text" spellcheck="false">
+          </label>
+          <label>
+            Message Wait (ms)
+            <input id="messageWait" type="number" min="0" step="100">
+          </label>
+          <label>
+            Reconnect Base (ms)
+            <input id="reconnectBase" type="number" min="1000" step="1000">
+          </label>
+          <label>
+            Reconnect Max (ms)
+            <input id="reconnectMax" type="number" min="1000" step="1000">
+          </label>
+          <label>
+            Browser Path
+            <input id="browserPath" type="text" spellcheck="false">
+          </label>
+        </div>
+
+        <div class="toggle-grid">
+          <label><input id="headless" type="checkbox"> Headless</label>
+          <label><input id="fullPage" type="checkbox"> Full Page</label>
+          <label><input id="autoOpenChat" type="checkbox"> Auto Open Chat</label>
+          <label><input id="logToFile" type="checkbox"> Log To File</label>
+          <label><input id="debugFocus" type="checkbox"> Debug Focus</label>
+        </div>
+
+        <div id="extraSettings" class="extra-settings"></div>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Activity</h2>
+            <p id="lastUpdate">Waiting</p>
+          </div>
+        </div>
+        <pre id="logOutput"></pre>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

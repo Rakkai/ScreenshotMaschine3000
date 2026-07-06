@@ -1,17 +1,24 @@
 #!/usr/bin/env node
 
-require('dotenv').config({ quiet: true });
-
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const qrcode = require('qrcode-terminal');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 
-const SCREENSHOT_DIR = path.resolve(process.env.SCREENSHOT_DIR || './screenshots');
-const LOCAL_AUTH_PATH = path.resolve(process.env.LOCAL_AUTH_PATH || './.wwebjs_auth');
-const TARGET_CONTACT_ID_RAW = (process.env.TARGET_CONTACT_ID || '').trim();
-const TARGET_CONTACT_NAME_RAW = (process.env.TARGET_CONTACT_NAME || '').trim();
+const CONFIG_FILE = process.env.CONFIG_FILE ? path.resolve(process.env.CONFIG_FILE) : undefined;
+require('dotenv').config({
+  path: CONFIG_FILE,
+  quiet: true,
+  override: true,
+});
+
+const APP_BRIDGE = process.env.APP_BRIDGE === '1';
+const PATH_BASE = path.resolve(process.env.APP_DATA_DIR || (CONFIG_FILE ? path.dirname(CONFIG_FILE) : process.cwd()));
+const SCREENSHOT_DIR = resolveConfiguredPath(process.env.SCREENSHOT_DIR, './screenshots');
+const LOCAL_AUTH_PATH = resolveConfiguredPath(process.env.LOCAL_AUTH_PATH, './.wwebjs_auth');
+const TARGET_CONTACT_IDS_RAW = splitEnvList(process.env.TARGET_CONTACT_IDS || process.env.TARGET_CONTACT_ID || '');
+const TARGET_CONTACT_NAMES_RAW = splitEnvList(process.env.TARGET_CONTACT_NAMES || process.env.TARGET_CONTACT_NAME || '');
 const FULL_PAGE_SCREENSHOT = String(process.env.FULL_PAGE_SCREENSHOT || 'true').toLowerCase() === 'true';
 const HEADLESS = String(process.env.HEADLESS || 'false').toLowerCase() === 'true';
 const AUTO_OPEN_CHAT_BEFORE_SCREENSHOT = String(process.env.AUTO_OPEN_CHAT_BEFORE_SCREENSHOT || 'true').toLowerCase() === 'true';
@@ -20,7 +27,8 @@ const DEBUG_FOCUS = String(process.env.DEBUG_FOCUS || 'false').toLowerCase() ===
 const RECONNECT_BASE_MS = Number(process.env.RECONNECT_BASE_MS || 5000);
 const RECONNECT_MAX_MS = Number(process.env.RECONNECT_MAX_MS || 120000);
 const LOG_TO_FILE = String(process.env.LOG_TO_FILE || 'true').toLowerCase() === 'true';
-const LOG_FILE = path.resolve(process.env.LOG_FILE || './logs/monitor.log');
+const LOG_FILE = resolveConfiguredPath(process.env.LOG_FILE, './logs/monitor.log');
+const PUPPETEER_EXECUTABLE_PATH = (process.env.PUPPETEER_EXECUTABLE_PATH || '').trim();
 
 function formatLogArgs(args) {
   return args
@@ -69,16 +77,47 @@ function setupFileLogging() {
 
 setupFileLogging();
 
-if (!TARGET_CONTACT_ID_RAW && !TARGET_CONTACT_NAME_RAW) {
-  console.error('Missing config: set TARGET_CONTACT_ID or TARGET_CONTACT_NAME in .env');
+const targetContactIds = new Set(TARGET_CONTACT_IDS_RAW.map(normalizeContactId).filter(Boolean));
+const targetContactNames = new Set(
+  TARGET_CONTACT_NAMES_RAW
+    .map((name) => name.toLowerCase())
+    .filter(Boolean)
+);
+const resolvedTargetIds = new Set();
+
+if (!hasConfiguredTargets() && !APP_BRIDGE) {
+  console.error('Missing config: set TARGET_CONTACT_IDS, TARGET_CONTACT_ID, TARGET_CONTACT_NAMES, or TARGET_CONTACT_NAME in .env');
   process.exit(1);
 }
 
-let targetContactId = normalizeContactId(TARGET_CONTACT_ID_RAW);
-let targetContactName = TARGET_CONTACT_NAME_RAW.toLowerCase();
-let targetResolvedFromName = false;
-
 const seenMessageIds = new Set();
+
+function resolveConfiguredPath(rawValue, fallbackValue) {
+  return path.resolve(PATH_BASE, rawValue || fallbackValue);
+}
+
+function splitEnvList(raw) {
+  return String(raw || '')
+    .split(/[\n,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function hasConfiguredTargets() {
+  return targetContactIds.size > 0 || targetContactNames.size > 0;
+}
+
+function emitAppEvent(type, payload = {}) {
+  if (!APP_BRIDGE) {
+    return;
+  }
+
+  try {
+    process.stdout.write(`SM3000_EVENT ${JSON.stringify({ type, ...payload })}\n`);
+  } catch (_error) {
+    // App events are best-effort; normal file/terminal logging remains available.
+  }
+}
 
 function normalizeContactId(raw) {
   if (!raw) {
@@ -125,6 +164,59 @@ function extractPhoneFromWhatsAppId(chatId) {
   }
 
   return chatId.slice(0, -'@c.us'.length).replace(/[^\d]/g, '');
+}
+
+function pathExists(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch (_error) {
+    try {
+      fs.accessSync(filePath, fs.constants.F_OK);
+      return true;
+    } catch (_nestedError) {
+      return false;
+    }
+  }
+}
+
+function browserExecutableCandidates() {
+  if (process.platform === 'darwin') {
+    return [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    ];
+  }
+
+  if (process.platform === 'win32') {
+    const roots = [
+      process.env.PROGRAMFILES,
+      process.env['PROGRAMFILES(X86)'],
+      process.env.LOCALAPPDATA,
+    ].filter(Boolean);
+
+    return roots.flatMap((root) => [
+      path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(root, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ]);
+  }
+
+  return [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/microsoft-edge',
+  ];
+}
+
+function findBrowserExecutable() {
+  if (PUPPETEER_EXECUTABLE_PATH) {
+    return PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  return browserExecutableCandidates().find(pathExists) || '';
 }
 
 async function resolveTargetByName(client, desiredName) {
@@ -176,17 +268,74 @@ async function ensureDirectories() {
 }
 
 function buildClient() {
+  const puppeteerOptions = {
+    headless: HEADLESS,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  };
+  const executablePath = findBrowserExecutable();
+
+  if (executablePath) {
+    puppeteerOptions.executablePath = executablePath;
+  }
+
   return new Client({
     authStrategy: new LocalAuth({
       dataPath: LOCAL_AUTH_PATH,
     }),
-    puppeteer: {
-      headless: HEADLESS,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    },
+    puppeteer: puppeteerOptions,
     takeoverOnConflict: true,
     takeoverTimeoutMs: 0,
   });
+}
+
+function upsertContact(contactMap, id, label, phone) {
+  if (!id || !id.endsWith('@c.us')) {
+    return;
+  }
+
+  const existing = contactMap.get(id);
+  const cleanLabel = String(label || '').trim();
+  const nextLabel = cleanLabel || existing?.label || phone || id;
+
+  contactMap.set(id, {
+    id,
+    label: nextLabel,
+    phone: phone || existing?.phone || extractPhoneFromWhatsAppId(id),
+  });
+}
+
+async function emitContactsForApp(client) {
+  if (!APP_BRIDGE) {
+    return;
+  }
+
+  try {
+    const contactMap = new Map();
+    const contacts = await client.getContacts();
+    for (const contact of contacts) {
+      const id = contact?.id?._serialized;
+      upsertContact(
+        contactMap,
+        id,
+        contact?.name || contact?.pushname || contact?.shortName,
+        extractPhoneFromWhatsAppId(id)
+      );
+    }
+
+    const chats = await client.getChats();
+    for (const chat of chats) {
+      const id = chat?.id?._serialized;
+      upsertContact(contactMap, id, chat?.name, extractPhoneFromWhatsAppId(id));
+    }
+
+    const contactsForApp = [...contactMap.values()].sort((a, b) => {
+      return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+    });
+
+    emitAppEvent('contacts', { contacts: contactsForApp });
+  } catch (error) {
+    emitAppEvent('contacts-error', { message: error?.message || String(error) });
+  }
 }
 
 async function takeScreenshot(client, message, displayName) {
@@ -313,11 +462,11 @@ async function isTargetMessage(message) {
     return false;
   }
 
-  if (targetContactId && message.from === targetContactId) {
+  if (targetContactIds.has(message.from)) {
     return true;
   }
 
-  if (!targetContactName) {
+  if (targetContactNames.size === 0) {
     return false;
   }
 
@@ -333,45 +482,64 @@ async function isTargetMessage(message) {
     .filter(Boolean)
     .map((name) => name.toLowerCase());
 
-  return names.includes(targetContactName);
+  return names.some((name) => targetContactNames.has(name));
 }
 
 function attachClientHandlers(client) {
   client.on('qr', (qr) => {
+    emitAppEvent('qr', { qr });
+
+    if (APP_BRIDGE) {
+      console.log('WhatsApp login required. QR code sent to app window.');
+      return;
+    }
+
     console.log('\nScan this QR code with your WhatsApp app:');
     qrcode.generate(qr, { small: true });
     console.log('Waiting for authentication...\n');
   });
 
   client.on('authenticated', () => {
+    emitAppEvent('authenticated');
     console.log('Authenticated. Restoring session...');
   });
 
   client.on('ready', async () => {
+    emitAppEvent('status', { status: 'ready' });
     console.log('WhatsApp Web client is ready.');
 
-    if (!targetContactId && targetContactName) {
-      const resolvedId = await resolveTargetByName(client, targetContactName);
+    for (const targetContactNameRaw of TARGET_CONTACT_NAMES_RAW) {
+      const resolvedId = await resolveTargetByName(client, targetContactNameRaw);
       if (resolvedId) {
-        targetContactId = resolvedId;
-        targetResolvedFromName = true;
-        console.log(`Resolved TARGET_CONTACT_NAME to id: ${targetContactId}`);
+        targetContactIds.add(resolvedId);
+        resolvedTargetIds.add(resolvedId);
+        console.log(`Resolved target contact name "${targetContactNameRaw}" to id: ${resolvedId}`);
       } else {
-        console.log('Could not uniquely resolve TARGET_CONTACT_NAME. Using runtime name matching only.');
+        console.log(`Could not uniquely resolve target contact name "${targetContactNameRaw}". Using runtime name matching only.`);
       }
     }
 
-    if (targetContactId) {
-      const source = targetResolvedFromName ? ' (resolved from name)' : '';
-      console.log(`Monitoring contact id: ${targetContactId}${source}`);
+    if (targetContactIds.size > 0) {
+      const ids = [...targetContactIds].map((id) => `${id}${resolvedTargetIds.has(id) ? ' (resolved from name)' : ''}`);
+      console.log(`Monitoring contact ids: ${ids.join(', ')}`);
     }
 
-    if (targetContactName) {
-      console.log(`Monitoring contact name: ${TARGET_CONTACT_NAME_RAW}`);
+    if (TARGET_CONTACT_NAMES_RAW.length > 0) {
+      console.log(`Monitoring contact names: ${TARGET_CONTACT_NAMES_RAW.join(', ')}`);
+    }
+
+    if (!hasConfiguredTargets()) {
+      console.log('No target contacts configured yet. Use the app window to select contacts.');
     }
 
     console.log(`Saving screenshots to: ${SCREENSHOT_DIR}`);
     console.log('Listening for new messages...\n');
+    emitAppEvent('ready', {
+      screenshotDir: SCREENSHOT_DIR,
+      targetContactIds: [...targetContactIds],
+      targetContactNames: TARGET_CONTACT_NAMES_RAW,
+    });
+    await emitContactsForApp(client);
   });
 
   client.on('message', async (message) => {
@@ -398,16 +566,23 @@ function attachClientHandlers(client) {
 
       console.log(`[${new Date().toISOString()}] Message matched from ${displayName} (${message.from})`);
       console.log(`Screenshot saved: ${screenshotPath}`);
+      emitAppEvent('screenshot', {
+        path: screenshotPath,
+        displayName,
+        from: message.from,
+      });
       if (message.body) {
         console.log(`Message preview: ${message.body.slice(0, 120)}`);
       }
       console.log('');
     } catch (error) {
       console.error('Failed to process incoming message:', error);
+      emitAppEvent('error', { message: error?.message || String(error) });
     }
   });
 
   client.on('auth_failure', (msg) => {
+    emitAppEvent('auth_failure', { message: msg });
     console.error('Authentication failure:', msg);
   });
 }
@@ -438,6 +613,7 @@ async function runClientSession() {
   });
 
   client.on('disconnected', (reason) => {
+    emitAppEvent('disconnected', { reason });
     console.error('Client disconnected:', reason);
     disconnectedResolve(reason);
   });
@@ -477,6 +653,7 @@ async function main() {
 }
 
 main().catch((error) => {
+  emitAppEvent('fatal', { message: error?.message || String(error) });
   console.error('Fatal error:', error);
   process.exit(1);
 });
