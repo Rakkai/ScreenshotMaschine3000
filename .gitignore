@@ -1,0 +1,9 @@
+.DS_Store
+node_modules/
+.env
+.wwebjs_auth/
+.wwebjs_cache/
+screenshots/
+logs/
+windows/node-path.txt
+ScreenshotMaschine3000.zip
