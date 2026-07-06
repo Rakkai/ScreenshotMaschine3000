@@ -12,6 +12,79 @@ It is intended only for personal, authorized, GDPR-compliant evidence preservati
 
 This uses `whatsapp-web.js`, an unofficial WhatsApp Web automation library, and browser automation for Telegram Web. Use it only on accounts and devices you own/control, and only for legal/authorized use.
 
+WhatsApp and Telegram can change their web apps at any time. If login, contact loading, or screenshots suddenly stop working, first update dependencies and then check whether the web UI changed.
+
+## Requirements
+
+- Node.js 18 or newer
+- npm
+- A browser the monitor can use: Chrome, Edge, Chromium, or Puppeteer's managed browser
+- A WhatsApp account, Telegram account, or both, depending on what you want to monitor
+
+If browser launch fails, install Chrome/Edge/Chromium or set `PUPPETEER_EXECUTABLE_PATH` in `.env`.
+
+## Quick Start
+
+From a fresh clone:
+
+```bash
+npm install
+npm start
+```
+
+`npm start` opens the desktop dashboard and creates a local `.env` automatically if one does not exist. On first run:
+
+1. Scan the WhatsApp QR code in the app window if you want WhatsApp monitoring.
+2. Choose WhatsApp target contacts from the loaded contact list, or enter exact IDs/names manually.
+3. Enter Telegram Web chat names if you want Telegram monitoring.
+4. Choose a screenshot folder if the default is not right.
+5. Click **Save**. The monitor restarts with the new settings.
+
+Screenshots are saved as PNG files. WhatsApp filenames include the local timestamp, contact display name, sender ID, and message ID. Telegram filenames include the local timestamp, chat name, and a short hash of the detected message state.
+
+## macOS Setup
+
+For a normal macOS setup from this source folder:
+
+```bash
+./macos/setup.command
+```
+
+That script checks Node.js, runs `npm install`, creates `.env` from `.env.example` if needed, creates `logs/` and `screenshots/`, creates a Desktop launcher, and writes a LaunchAgent so the dashboard opens after your next macOS login.
+
+To omit either piece, pass one or both skip flags:
+
+```bash
+./macos/setup.command --skip-login-item
+./macos/setup.command --skip-desktop-launcher
+```
+
+To remove the Desktop launcher and login item:
+
+```bash
+./macos/uninstall.command
+```
+
+The uninstall helper does not delete screenshots, logs, `.env`, or browser login sessions.
+
+## Windows Setup
+
+For a non-technical Windows setup from this source folder:
+
+```powershell
+.\windows\Einrichten.bat
+```
+
+That script checks Node.js, runs `npm install`, creates `.env` from `.env.example` if needed, creates `logs/` and `screenshots/`, adds a desktop shortcut, and registers a startup task that opens the dashboard after login.
+
+To remove the desktop shortcut and startup task:
+
+```powershell
+.\windows\Deinstallieren.bat
+```
+
+The uninstall helper does not delete screenshots, logs, `.env`, or browser login sessions.
+
 ## Normal Use
 
 Open **Screenshot Maschine 3000**.
@@ -27,48 +100,21 @@ The app window lets you:
 - start, stop, and restart the monitor
 - see recent activity without opening a terminal
 
-Screenshots are saved as PNG files. WhatsApp filenames include the local timestamp, contact display name, sender ID, and message ID. Telegram filenames include the local timestamp, chat name, and a short hash of the detected message state.
-
-## Installers
-
-Build a local installer from this project:
-
-```bash
-npm install
-npm run dist:mac
-```
-
-On Windows, build the Windows installer on a Windows machine:
-
-```powershell
-npm install
-npm run dist:win
-```
-
-Generated installers are written to `dist/`.
-
-## Run From Source
-
-Node.js 18+ is required when running from source.
-
-```bash
-npm install
-npm start
-```
-
-`npm start` opens the desktop dashboard. The old terminal monitor is still available:
+The old terminal monitor is still available:
 
 ```bash
 npm run monitor
 ```
 
-On Windows, `windows\Einrichten.bat` installs dependencies, creates a desktop shortcut, and registers startup using the dashboard instead of the terminal monitor.
+Use that only if `.env` already contains target contacts or Telegram chat names. The terminal version prints the WhatsApp QR code in the terminal and has no dashboard contact picker.
 
 ## Configuration
 
-In development, config is read from this project’s `.env`.
+In development, config is read from this project's `.env`.
 
 In packaged desktop builds, config is stored in the app data folder so installed apps can write settings without administrator access.
+
+For normal use, do not create `.env` by hand. The dashboard and setup scripts create it when missing. Use `.env.example` as the reference when editing settings manually.
 
 Supported settings:
 
@@ -95,17 +141,67 @@ LOG_FILE=./logs/monitor.log
 PUPPETEER_EXECUTABLE_PATH=
 ```
 
-For best reliability, use contact IDs in WhatsApp JID format, for example `4917612345678@c.us`. The dashboard can fill these IDs from the WhatsApp contacts list after login.
+For best WhatsApp reliability, use contact IDs in WhatsApp JID format, for example `4917612345678@c.us`. The dashboard can fill these IDs from the WhatsApp contacts list after login.
+
+`TARGET_CONTACT_ID` and `TARGET_CONTACT_NAME` are legacy single-contact fields. Prefer `TARGET_CONTACT_IDS` and `TARGET_CONTACT_NAMES` for new setups.
 
 Telegram Web chats are matched by exact visible chat name. On first run, sign in inside the opened Telegram Web browser window; session data is saved in `TELEGRAM_AUTH_PATH`. Telegram monitoring polls the configured chats because Telegram Web does not expose the same incoming-message event hook as WhatsApp Web.
 
-`PUPPETEER_EXECUTABLE_PATH` is optional. The monitor tries common Chrome, Edge, and Chromium locations on macOS, Windows, and Linux.
+## Local Files
+
+These folders/files are created locally and are intentionally ignored by git:
+
+- `.env` - local settings
+- `.wwebjs_auth/` - WhatsApp Web login/session data
+- `.telegram_auth/` - Telegram Web login/session data
+- `.wwebjs_cache/` - WhatsApp Web cache
+- `screenshots/` - captured evidence images
+- `logs/` - monitor log output
+- `node_modules/` - installed npm dependencies
+- `dist/` - generated app builds/installers
+
+Do not commit `.env`, auth folders, screenshots, or logs. They can contain private data.
 
 ## Checks
 
+Run the lightweight syntax and regression checks:
+
 ```bash
 npm run check
+```
+
+Create an unpacked desktop app for a packaging smoke test:
+
+```bash
 npm run pack
 ```
 
-`npm run check` validates JavaScript syntax. `npm run pack` creates an unpacked desktop app for a quick packaging smoke test.
+## Installers
+
+Build a local installer from this project:
+
+```bash
+npm install
+npm run dist:mac
+```
+
+On Windows, build the Windows installer on a Windows machine:
+
+```powershell
+npm install
+npm run dist:win
+```
+
+Generated installers and unpacked apps are written to `dist/`.
+
+## Troubleshooting
+
+If the app cannot start after a fresh checkout, run `npm install`.
+
+If WhatsApp asks for login again, scan the QR code in the dashboard. Removing `.wwebjs_auth/` resets the WhatsApp Web session.
+
+If Telegram asks for login again, sign in in the Telegram browser window. Removing `.telegram_auth/` resets the Telegram Web session.
+
+If no screenshots are saved, confirm that targets are configured, the monitor status says `Monitoring`, and `SCREENSHOT_DIR` points to a writable folder.
+
+If the browser does not open, install Chrome/Edge/Chromium or set `PUPPETEER_EXECUTABLE_PATH` to the browser executable.
