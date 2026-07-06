@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld('screenshotApp', {
   startMonitor: () => ipcRenderer.invoke('monitor:start'),
   stopMonitor: () => ipcRenderer.invoke('monitor:stop'),
   restartMonitor: () => ipcRenderer.invoke('monitor:restart'),
-  refreshContacts: () => ipcRenderer.invoke('contacts:refresh'),
   chooseFolder: (currentPath) => ipcRenderer.invoke('folder:choose', currentPath),
   openPath: (targetPath) => ipcRenderer.invoke('path:open', targetPath),
   onEvent: (callback) => {

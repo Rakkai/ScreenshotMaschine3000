@@ -4,11 +4,15 @@ A desktop app that watches WhatsApp Web and Telegram Web and saves screenshots w
 
 ## Why This Exists
 
-This project started as a small defensive tool for a friend who was being repeatedly messaged by a stalker and needed a less stressful way to preserve screenshots in case police or a lawyer ever needed evidence.
+This project started as a small defensive tool for a friend who was being harrassed via messengers and needed a way to preserve screenshots in case police or a lawyer ever needed hard evidence to initiate legal action. This extended to messages and chats that were deleted after being sent or read, so preserving them was even harder.
+
+It proved incredibly useful in this context, so we figured we should share it for others to protect themselves, too.
+
+This little tool creates a screenshot of incoming messages from selected contacts on WhatsApp and Telegram. The screenshots are created shortly after receiving them, so later edits and deletions are ignored but the screenshots kept. 
 
 It is intended only for personal, authorized, GDPR-compliant evidence preservation on accounts you control. Keep saved screenshots local and private, and share them only with police, lawyers, courts, or victim-support services when needed.
 
-## Important Caveat
+## Important Notice
 
 This uses `whatsapp-web.js`, an unofficial WhatsApp Web automation library, and browser automation for Telegram Web. Use it only on accounts and devices you own/control, and only for legal/authorized use.
 
@@ -175,6 +179,8 @@ Create an unpacked desktop app for a packaging smoke test:
 ```bash
 npm run pack
 ```
+
+
 
 ## Installers
 

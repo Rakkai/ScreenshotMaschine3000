@@ -37,7 +37,10 @@ let monitorProcess;
 let monitorStopping = false;
 let monitorStatus = 'Stopped';
 let latestQrDataUrl = '';
-let contacts = [];
+let serviceStatus = {
+  whatsapp: 'Stopped',
+  telegram: 'Stopped',
+};
 let logs = [];
 
 function getConfigDir() {
@@ -67,6 +70,39 @@ function firstListValue(rawValue) {
   return splitList(rawValue)[0] || '';
 }
 
+function hasWhatsAppTargets(values) {
+  return Boolean(splitList(values.TARGET_CONTACT_IDS).length || splitList(values.TARGET_CONTACT_NAMES).length);
+}
+
+function hasTelegramTargets(values) {
+  return splitList(values.TELEGRAM_TARGET_CHAT_NAMES).length > 0;
+}
+
+function setServiceStatusFromConfig(status) {
+  const values = readConfig().values;
+  const hasWhatsApp = hasWhatsAppTargets(values);
+  const hasTelegram = hasTelegramTargets(values);
+
+  serviceStatus = {
+    whatsapp: hasWhatsApp || !hasTelegram ? status : 'Not configured',
+    telegram: hasTelegram ? status : 'Not configured',
+  };
+}
+
+function updateMonitoringStatus(fallbackStatus) {
+  const active = [];
+
+  if (serviceStatus.whatsapp === 'Monitoring') {
+    active.push('WhatsApp');
+  }
+
+  if (serviceStatus.telegram === 'Monitoring') {
+    active.push('Telegram');
+  }
+
+  monitorStatus = active.length > 0 ? `Monitoring ${active.join(' + ')}` : fallbackStatus;
+}
+
 function formatEnvValue(value) {
   const text = String(value ?? '');
   if (!text) {
@@ -90,7 +126,7 @@ function buildEnvContent(values, extraValues = {}) {
 
   const lines = [
     '# Screenshot Maschine 3000 configuration',
-    '# Target contacts can be selected in the app dashboard.',
+    '# Target contacts can be entered in the app dashboard.',
     `TARGET_CONTACT_IDS=${formatEnvValue(next.TARGET_CONTACT_IDS)}`,
     `TARGET_CONTACT_NAMES=${formatEnvValue(next.TARGET_CONTACT_NAMES)}`,
     '',
@@ -185,12 +221,12 @@ function publicState() {
     isPackaged: app.isPackaged,
     values: config.values,
     extra: config.extra,
-    contacts,
     logs,
     monitor: {
       running: Boolean(monitorProcess),
       status: monitorStatus,
       qrDataUrl: latestQrDataUrl,
+      services: serviceStatus,
     },
     paths: {
       screenshotDir: resolveConfigPath(config.values.SCREENSHOT_DIR),
@@ -210,6 +246,52 @@ function broadcast(reason) {
     reason,
     state: publicState(),
   });
+}
+
+function hasUsableWindow(window) {
+  return Boolean(window && !window.isDestroyed());
+}
+
+function showAlreadyRunningMessage(parentWindow) {
+  const options = {
+    type: 'info',
+    buttons: ['OK'],
+    defaultId: 0,
+    title: 'Screenshot Maschine 3000 is already running',
+    message: 'Screenshot Maschine 3000 is already running.',
+    detail: 'The existing dashboard window has been brought to the front. Use that window instead of starting a second copy.',
+    noLink: true,
+  };
+
+  const message = hasUsableWindow(parentWindow)
+    ? dialog.showMessageBox(parentWindow, options)
+    : dialog.showMessageBox(options);
+
+  message.catch((error) => {
+    appendLog(`Could not show already-running message: ${error.message}`, 'warn');
+  });
+}
+
+function showExistingWindow() {
+  if (!hasUsableWindow(mainWindow)) {
+    mainWindow = undefined;
+    createWindow();
+  }
+
+  if (!hasUsableWindow(mainWindow)) {
+    return false;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+
+  mainWindow.focus();
+  return true;
 }
 
 function appendLog(line, level = 'info') {
@@ -238,6 +320,7 @@ async function handleMonitorEvent(event) {
 
   if (event.type === 'qr') {
     monitorStatus = 'Waiting for QR scan';
+    serviceStatus.whatsapp = 'Login required';
     latestQrDataUrl = await QRCode.toDataURL(event.qr, {
       errorCorrectionLevel: 'M',
       margin: 1,
@@ -249,6 +332,7 @@ async function handleMonitorEvent(event) {
 
   if (event.type === 'authenticated') {
     monitorStatus = 'Authenticated';
+    serviceStatus.whatsapp = 'Authenticated';
     latestQrDataUrl = '';
     broadcast('authenticated');
     return;
@@ -256,29 +340,43 @@ async function handleMonitorEvent(event) {
 
   if (event.type === 'ready') {
     const hasTargets = Boolean(event.targetContactIds?.length || event.targetContactNames?.length);
-    monitorStatus = hasTargets ? 'Monitoring' : 'Choose contacts';
+    serviceStatus.whatsapp = hasTargets ? 'Monitoring' : 'Ready, no targets';
+    updateMonitoringStatus(hasTargets ? 'Monitoring WhatsApp' : 'Add targets');
     latestQrDataUrl = '';
     broadcast('ready');
     return;
   }
 
   if (event.type === 'telegram-login') {
+    serviceStatus.telegram = 'Login required';
     monitorStatus = latestQrDataUrl ? 'WhatsApp login required' : 'Telegram login required';
     broadcast('telegram-login');
     return;
   }
 
   if (event.type === 'telegram-ready') {
-    if (!latestQrDataUrl) {
-      monitorStatus = 'Monitoring';
+    serviceStatus.telegram = 'Monitoring';
+    if (latestQrDataUrl) {
+      monitorStatus = 'WhatsApp login required';
+    } else {
+      updateMonitoringStatus('Monitoring Telegram');
     }
     broadcast('telegram-ready');
     return;
   }
 
-  if (event.type === 'contacts') {
-    contacts = Array.isArray(event.contacts) ? event.contacts : [];
-    broadcast('contacts');
+  if (event.type === 'telegram-disconnected') {
+    serviceStatus.telegram = 'Disconnected';
+    updateMonitoringStatus('Telegram disconnected');
+    broadcast('telegram-disconnected');
+    return;
+  }
+
+  if (event.type === 'telegram-error') {
+    serviceStatus.telegram = 'Needs attention';
+    monitorStatus = 'Needs attention';
+    appendLog(event.message || 'Telegram error', 'error');
+    broadcast('telegram-error');
     return;
   }
 
@@ -288,6 +386,14 @@ async function handleMonitorEvent(event) {
   }
 
   if (event.type === 'auth_failure' || event.type === 'fatal' || event.type === 'error') {
+    if (event.type === 'auth_failure' || event.service === 'whatsapp') {
+      serviceStatus.whatsapp = 'Needs attention';
+    } else if (event.service === 'telegram') {
+      serviceStatus.telegram = 'Needs attention';
+    } else if (event.type === 'fatal') {
+      serviceStatus.whatsapp = 'Needs attention';
+      serviceStatus.telegram = 'Needs attention';
+    }
     monitorStatus = 'Needs attention';
     appendLog(event.message || event.type, 'error');
     broadcast(event.type);
@@ -296,14 +402,12 @@ async function handleMonitorEvent(event) {
 
   if (event.type === 'disconnected') {
     monitorStatus = 'Disconnected';
+    serviceStatus.whatsapp = 'Disconnected';
     appendLog(`Disconnected: ${event.reason || 'unknown reason'}`, 'warn');
     broadcast('disconnected');
     return;
   }
 
-  if (event.type === 'contacts-error') {
-    appendLog(`Could not load contacts: ${event.message || 'unknown error'}`, 'warn');
-  }
 }
 
 function handleMonitorMessage(message) {
@@ -338,6 +442,7 @@ function startMonitor() {
   monitorStopping = false;
   latestQrDataUrl = '';
   monitorStatus = 'Starting';
+  setServiceStatusFromConfig('Starting');
   appendLog('Starting monitor...');
 
   monitorProcess = fork(getMonitorPath(), [], {
@@ -359,6 +464,8 @@ function startMonitor() {
 
   monitorProcess.on('error', (error) => {
     monitorStatus = 'Needs attention';
+    serviceStatus.whatsapp = 'Needs attention';
+    serviceStatus.telegram = 'Needs attention';
     appendLog(`Monitor failed to start: ${error.message}`, 'error');
     broadcast('monitor-error');
   });
@@ -367,6 +474,7 @@ function startMonitor() {
     monitorProcess = undefined;
     latestQrDataUrl = '';
     monitorStatus = monitorStopping ? 'Stopped' : `Stopped${code ? ` (${code})` : ''}${signal ? ` ${signal}` : ''}`;
+    setServiceStatusFromConfig('Stopped');
     monitorStopping = false;
     appendLog(`Monitor ${monitorStatus.toLowerCase()}.`);
     broadcast('monitor-exit');
@@ -379,12 +487,14 @@ function startMonitor() {
 async function stopMonitor() {
   if (!monitorProcess) {
     monitorStatus = 'Stopped';
+    setServiceStatusFromConfig('Stopped');
     return publicState();
   }
 
   const child = monitorProcess;
   monitorStopping = true;
   monitorStatus = 'Stopping';
+  setServiceStatusFromConfig('Stopping');
   appendLog('Stopping monitor...');
   child.kill();
 
@@ -419,6 +529,9 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.on('closed', () => {
+    mainWindow = undefined;
+  });
 }
 
 ipcMain.handle('app:get-state', () => publicState());
@@ -429,7 +542,6 @@ ipcMain.handle('config:save', (_event, payload) => {
 ipcMain.handle('monitor:start', () => startMonitor());
 ipcMain.handle('monitor:stop', () => stopMonitor());
 ipcMain.handle('monitor:restart', () => restartMonitor());
-ipcMain.handle('contacts:refresh', () => startMonitor());
 ipcMain.handle('folder:choose', async (_event, currentPath) => {
   const result = await dialog.showOpenDialog(mainWindow, {
     defaultPath: currentPath ? resolveConfigPath(currentPath) : getConfigDir(),
@@ -449,12 +561,14 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.focus();
+    try {
+      showExistingWindow();
+    } catch (error) {
+      mainWindow = undefined;
+      appendLog(`Could not bring existing window to front: ${error.message}`, 'warn');
     }
+
+    showAlreadyRunningMessage(mainWindow);
   });
 
   app.whenReady().then(() => {

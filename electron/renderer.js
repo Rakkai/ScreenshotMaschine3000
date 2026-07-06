@@ -11,12 +11,10 @@ const elements = {
   restartButton: document.querySelector('#restartButton'),
   qrPanel: document.querySelector('#qrPanel'),
   qrImage: document.querySelector('#qrImage'),
-  contactCount: document.querySelector('#contactCount'),
-  contactSearch: document.querySelector('#contactSearch'),
-  contactsList: document.querySelector('#contactsList'),
-  refreshContactsButton: document.querySelector('#refreshContactsButton'),
-  clearTargetsButton: document.querySelector('#clearTargetsButton'),
-  targetIds: document.querySelector('#targetIds'),
+  whatsappServiceStatus: document.querySelector('#whatsappServiceStatus'),
+  whatsappServiceTargets: document.querySelector('#whatsappServiceTargets'),
+  telegramServiceStatus: document.querySelector('#telegramServiceStatus'),
+  telegramServiceTargets: document.querySelector('#telegramServiceTargets'),
   targetNames: document.querySelector('#targetNames'),
   telegramChatNames: document.querySelector('#telegramChatNames'),
   screenshotPath: document.querySelector('#screenshotPath'),
@@ -62,8 +60,33 @@ function setCheckbox(element, value) {
   element.checked = String(value || '').toLowerCase() === 'true';
 }
 
-function selectedTargetIds() {
-  return new Set(splitList(elements.targetIds.value));
+function setServiceState(element, status) {
+  element.textContent = status;
+  element.className = 'service-state';
+
+  if (/monitoring|ready/i.test(status)) {
+    element.classList.add('ready');
+  } else if (/attention|error|failure|fatal|disconnected/i.test(status)) {
+    element.classList.add('error');
+  } else if (/starting|stopping|login|authenticated|target/i.test(status)) {
+    element.classList.add('pending');
+  }
+}
+
+function renderMonitoring() {
+  const values = state.values || {};
+  const services = state.monitor.services || {};
+  const whatsappNames = splitList(values.TARGET_CONTACT_NAMES);
+  const telegramChats = splitList(values.TELEGRAM_TARGET_CHAT_NAMES);
+
+  setServiceState(elements.whatsappServiceStatus, services.whatsapp || 'Stopped');
+  setServiceState(elements.telegramServiceStatus, services.telegram || 'Stopped');
+  elements.whatsappServiceTargets.textContent = whatsappNames.length > 0
+    ? `Names: ${whatsappNames.join(', ')}`
+    : 'No WhatsApp targets';
+  elements.telegramServiceTargets.textContent = telegramChats.length > 0
+    ? `Chats: ${telegramChats.join(', ')}`
+    : 'No Telegram chats';
 }
 
 function renderStatus() {
@@ -92,7 +115,6 @@ function renderConfig() {
   }
 
   const values = state.values;
-  elements.targetIds.value = joinLines(values.TARGET_CONTACT_IDS);
   elements.targetNames.value = joinLines(values.TARGET_CONTACT_NAMES);
   elements.telegramChatNames.value = joinLines(values.TELEGRAM_TARGET_CHAT_NAMES);
   elements.screenshotDir.value = values.SCREENSHOT_DIR || '';
@@ -134,50 +156,6 @@ function renderExtraSettings() {
   }
 }
 
-function renderContacts() {
-  const query = elements.contactSearch.value.trim().toLowerCase();
-  const contacts = state.contacts || [];
-  const selectedIds = selectedTargetIds();
-  const filtered = contacts.filter((contact) => {
-    const haystack = `${contact.label || ''} ${contact.phone || ''} ${contact.id || ''}`.toLowerCase();
-    return !query || haystack.includes(query);
-  });
-
-  elements.contactCount.textContent = `${contacts.length} loaded`;
-  elements.contactsList.innerHTML = '';
-
-  if (filtered.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'contact-row';
-    empty.textContent = contacts.length === 0 ? 'No contacts yet' : 'No matches';
-    elements.contactsList.append(empty);
-    return;
-  }
-
-  for (const contact of filtered.slice(0, 200)) {
-    const row = document.createElement('label');
-    row.className = 'contact-row';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = selectedIds.has(contact.id);
-    checkbox.addEventListener('change', () => toggleContact(contact, checkbox.checked));
-
-    const text = document.createElement('span');
-    const name = document.createElement('span');
-    name.className = 'contact-name';
-    name.textContent = contact.label || contact.id;
-
-    const id = document.createElement('span');
-    id.className = 'contact-id';
-    id.textContent = contact.phone ? `${contact.phone} · ${contact.id}` : contact.id;
-
-    text.append(name, id);
-    row.append(checkbox, text);
-    elements.contactsList.append(row);
-  }
-}
-
 function renderLogs() {
   const lines = (state.logs || []).slice(-120).map((entry) => {
     const time = new Date(entry.at).toLocaleTimeString();
@@ -195,8 +173,8 @@ function render() {
 
   renderStatus();
   renderQr();
+  renderMonitoring();
   renderConfig();
-  renderContacts();
   renderLogs();
 }
 
@@ -213,7 +191,7 @@ function collectConfig() {
   return {
     values: {
       ...state.values,
-      TARGET_CONTACT_IDS: splitList(elements.targetIds.value).join(','),
+      TARGET_CONTACT_IDS: '',
       TARGET_CONTACT_NAMES: splitList(elements.targetNames.value).join(','),
       TELEGRAM_TARGET_CHAT_NAMES: splitList(elements.telegramChatNames.value).join(','),
       SCREENSHOT_DIR: elements.screenshotDir.value.trim(),
@@ -233,17 +211,6 @@ function collectConfig() {
     },
     extra,
   };
-}
-
-function toggleContact(contact, checked) {
-  const ids = selectedTargetIds();
-  if (checked) {
-    ids.add(contact.id);
-  } else {
-    ids.delete(contact.id);
-  }
-  elements.targetIds.value = [...ids].join('\n');
-  markFormDirty();
 }
 
 async function saveAndRestart() {
@@ -269,24 +236,6 @@ elements.restartButton.addEventListener('click', async () => {
   render();
 });
 
-elements.refreshContactsButton.addEventListener('click', async () => {
-  state = await appApi.refreshContacts();
-  render();
-});
-
-elements.clearTargetsButton.addEventListener('click', () => {
-  elements.targetIds.value = '';
-  elements.targetNames.value = '';
-  elements.telegramChatNames.value = '';
-  markFormDirty();
-  renderContacts();
-});
-
-elements.contactSearch.addEventListener('input', renderContacts);
-elements.targetIds.addEventListener('input', () => {
-  markFormDirty();
-  renderContacts();
-});
 elements.targetNames.addEventListener('input', markFormDirty);
 elements.telegramChatNames.addEventListener('input', markFormDirty);
 

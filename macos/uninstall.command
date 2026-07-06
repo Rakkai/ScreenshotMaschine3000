@@ -4,7 +4,8 @@ set -euo pipefail
 APP_NAME="Screenshot Maschine 3000"
 LAUNCH_AGENT_LABEL="com.screenshotmaschine3000.dashboard"
 LAUNCH_AGENT_PATH="$HOME/Library/LaunchAgents/$LAUNCH_AGENT_LABEL.plist"
-DESKTOP_LAUNCHER="$HOME/Desktop/$APP_NAME.command"
+DESKTOP_LAUNCHER="$HOME/Desktop/$APP_NAME.app"
+LEGACY_DESKTOP_LAUNCHER="$HOME/Desktop/$APP_NAME.command"
 
 echo
 echo "Screenshot Maschine 3000 - macOS uninstall"
@@ -18,11 +19,16 @@ else
   echo "No login item found."
 fi
 
-if [ -f "$DESKTOP_LAUNCHER" ]; then
-  rm -f "$DESKTOP_LAUNCHER"
+if [ -d "$DESKTOP_LAUNCHER" ]; then
+  rm -rf "$DESKTOP_LAUNCHER"
   echo "Removed Desktop launcher: $DESKTOP_LAUNCHER"
 else
   echo "No Desktop launcher found."
+fi
+
+if [ -f "$LEGACY_DESKTOP_LAUNCHER" ]; then
+  rm -f "$LEGACY_DESKTOP_LAUNCHER"
+  echo "Removed old Desktop launcher: $LEGACY_DESKTOP_LAUNCHER"
 fi
 
 echo

@@ -25,7 +25,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="Screenshot Maschine 3000"
 LAUNCH_AGENT_LABEL="com.screenshotmaschine3000.dashboard"
 LAUNCH_AGENT_PATH="$HOME/Library/LaunchAgents/$LAUNCH_AGENT_LABEL.plist"
-DESKTOP_LAUNCHER="$HOME/Desktop/$APP_NAME.command"
+DESKTOP_LAUNCHER="$HOME/Desktop/$APP_NAME.app"
+LEGACY_DESKTOP_LAUNCHER="$HOME/Desktop/$APP_NAME.command"
 
 xml_escape() {
   printf '%s' "$1" \
@@ -37,14 +38,41 @@ xml_escape() {
       -e "s/'/\&apos;/g"
 }
 
+applescript_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
 write_desktop_launcher() {
+  local project_root_script
+  local log_dir_script
+  local stdout_script
+  local stderr_script
+  local launcher_script
+
+  project_root_script="$(applescript_escape "$PROJECT_ROOT")"
+  log_dir_script="$(applescript_escape "$PROJECT_ROOT/logs")"
+  stdout_script="$(applescript_escape "$PROJECT_ROOT/logs/macos-launch.log")"
+  stderr_script="$(applescript_escape "$PROJECT_ROOT/logs/macos-launch-error.log")"
+  launcher_script="$(mktemp)"
+
   mkdir -p "$HOME/Desktop"
-  {
-    echo '#!/bin/zsh'
-    printf 'export SM3000_PROJECT_ROOT=%q\n' "$PROJECT_ROOT"
-    printf '%s\n' "exec /bin/zsh -lc 'cd \"\$SM3000_PROJECT_ROOT\" && npm start'"
-  } > "$DESKTOP_LAUNCHER"
-  chmod +x "$DESKTOP_LAUNCHER"
+  rm -rf "$DESKTOP_LAUNCHER"
+  rm -f "$LEGACY_DESKTOP_LAUNCHER"
+
+cat > "$launcher_script" <<APPLESCRIPT
+property projectRoot : "$project_root_script"
+property logDir : "$log_dir_script"
+property stdoutPath : "$stdout_script"
+property stderrPath : "$stderr_script"
+
+on run
+  set commandText to "mkdir -p " & quoted form of logDir & " && cd " & quoted form of projectRoot & " && npm start >> " & quoted form of stdoutPath & " 2>> " & quoted form of stderrPath & " &"
+  do shell script "/bin/zsh -lc " & quoted form of commandText
+end run
+APPLESCRIPT
+
+  /usr/bin/osacompile -o "$DESKTOP_LAUNCHER" "$launcher_script"
+  rm -f "$launcher_script"
 }
 
 write_launch_agent() {
@@ -150,7 +178,7 @@ else
   echo "  1. Run: npm start"
 fi
 echo "  2. Scan the WhatsApp QR code in the app window if needed."
-echo "  3. Select contacts or enter Telegram chat names, then save."
+echo "  3. Enter WhatsApp contacts or Telegram chat names, then save."
 if [ "$skip_login_item" = false ]; then
   echo "  4. The dashboard will also open after your next macOS login."
 fi

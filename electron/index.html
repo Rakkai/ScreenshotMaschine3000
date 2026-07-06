@@ -32,6 +32,31 @@
         </p>
       </section>
 
+      <section class="panel monitor-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Monitoring</h2>
+          </div>
+        </div>
+
+        <div class="service-status-grid">
+          <div class="service-status-row">
+            <div>
+              <div class="service-title">WhatsApp</div>
+              <div id="whatsappServiceStatus" class="service-state">Stopped</div>
+            </div>
+            <div id="whatsappServiceTargets" class="service-targets">No WhatsApp targets</div>
+          </div>
+          <div class="service-status-row">
+            <div>
+              <div class="service-title">Telegram</div>
+              <div id="telegramServiceStatus" class="service-state">Stopped</div>
+            </div>
+            <div id="telegramServiceTargets" class="service-targets">No Telegram chats</div>
+          </div>
+        </div>
+      </section>
+
       <section id="qrPanel" class="panel qr-panel hidden">
         <div>
           <h2>WhatsApp Login</h2>
@@ -44,32 +69,25 @@
         <div class="panel-heading">
           <div>
             <h2>Target Contacts</h2>
-            <p id="contactCount">No contacts loaded</p>
           </div>
-          <button id="refreshContactsButton" type="button" class="secondary">Refresh</button>
         </div>
-
-        <div class="contact-tools">
-          <input id="contactSearch" type="search" placeholder="Search contacts">
-          <button id="clearTargetsButton" type="button" class="secondary">Clear</button>
-        </div>
-
-        <div id="contactsList" class="contacts-list"></div>
 
         <div class="manual-targets">
           <label>
-            WhatsApp Contact IDs
-            <textarea id="targetIds" spellcheck="false" rows="4"></textarea>
-          </label>
-          <label>
-            WhatsApp Contact Names
+            <span class="field-title">
+              WhatsApp Contact Names
+              <span class="info-icon" tabindex="0" data-tooltip="Enter the exact WhatsApp contact or chat names as they appear in WhatsApp Web. Separate multiple names with commas or new lines." aria-label="Enter the exact WhatsApp contact or chat names as they appear in WhatsApp Web. Separate multiple names with commas or new lines.">i</span>
+            </span>
             <textarea id="targetNames" spellcheck="false" rows="4"></textarea>
           </label>
         </div>
 
         <div class="telegram-targets">
           <label>
-            Telegram Chat Names
+            <span class="field-title">
+              Telegram Chat Names
+              <span class="info-icon" tabindex="0" data-tooltip="Enter the exact Telegram chat names as they appear in Telegram Web. Separate multiple chats with commas or new lines." aria-label="Enter the exact Telegram chat names as they appear in Telegram Web. Separate multiple chats with commas or new lines.">i</span>
+            </span>
             <textarea id="telegramChatNames" spellcheck="false" rows="3"></textarea>
           </label>
         </div>

@@ -82,7 +82,7 @@ if (-not (Test-Path -LiteralPath $EnvFile)) {
     }
     Copy-Item -LiteralPath $EnvExample -Destination $EnvFile
     Write-Host '   .env wurde aus .env.example erstellt.' -ForegroundColor Yellow
-    Write-Host '   Kontakte koennen im Dashboard ausgewaehlt werden.' -ForegroundColor Yellow
+    Write-Host '   Kontakte und Chats koennen im Dashboard eingetragen werden.' -ForegroundColor Yellow
 }
 else {
     Write-Host '   .env vorhanden.'
@@ -148,6 +148,6 @@ Write-Host ''
 Write-Host 'Naechste Schritte:'
 Write-Host '  1. Desktop-Verknuepfung doppelklicken'
 Write-Host '  2. Beim ersten Mal QR-Code im Appfenster mit WhatsApp scannen'
-Write-Host '  3. Zielkontakte im Dashboard auswaehlen und speichern'
+Write-Host '  3. Zielkontakte oder Chats im Dashboard eintragen und speichern'
 Write-Host '  4. Danach startet das Dashboard bei jedem PC-Neustart automatisch'
 Write-Host ''

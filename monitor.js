@@ -396,56 +396,6 @@ function buildTelegramLaunchOptions() {
   return launchOptions;
 }
 
-function upsertContact(contactMap, id, label, phone) {
-  if (!id || !id.endsWith('@c.us')) {
-    return;
-  }
-
-  const existing = contactMap.get(id);
-  const cleanLabel = String(label || '').trim();
-  const nextLabel = cleanLabel || existing?.label || phone || id;
-
-  contactMap.set(id, {
-    id,
-    label: nextLabel,
-    phone: phone || existing?.phone || extractPhoneFromWhatsAppId(id),
-  });
-}
-
-async function emitContactsForApp(client) {
-  if (!APP_BRIDGE) {
-    return;
-  }
-
-  try {
-    const contactMap = new Map();
-    const contacts = await client.getContacts();
-    for (const contact of contacts) {
-      const id = contact?.id?._serialized;
-      upsertContact(
-        contactMap,
-        id,
-        contact?.name || contact?.pushname || contact?.shortName,
-        extractPhoneFromWhatsAppId(id)
-      );
-    }
-
-    const chats = await client.getChats();
-    for (const chat of chats) {
-      const id = chat?.id?._serialized;
-      upsertContact(contactMap, id, chat?.name, extractPhoneFromWhatsAppId(id));
-    }
-
-    const contactsForApp = [...contactMap.values()].sort((a, b) => {
-      return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
-    });
-
-    emitAppEvent('contacts', { contacts: contactsForApp });
-  } catch (error) {
-    emitAppEvent('contacts-error', { message: error?.message || String(error) });
-  }
-}
-
 async function takeScreenshot(client, message, displayName) {
   if (!client.pupPage) {
     throw new Error('WhatsApp page is not ready for screenshot capture.');
@@ -863,7 +813,7 @@ async function runTelegramSession() {
           });
         } catch (error) {
           console.error(`Failed to process Telegram chat "${chatName}":`, error);
-          emitAppEvent('error', { message: error?.message || String(error) });
+          emitAppEvent('error', { service: 'telegram', message: error?.message || String(error) });
         }
       }
 
@@ -918,7 +868,7 @@ function attachClientHandlers(client) {
     }
 
     if (!hasConfiguredTargets()) {
-      console.log('No target contacts configured yet. Use the app window to select contacts.');
+      console.log('No target contacts configured yet. Add contact ids or names in the app window.');
     }
 
     console.log(`Saving screenshots to: ${SCREENSHOT_DIR}`);
@@ -928,7 +878,6 @@ function attachClientHandlers(client) {
       targetContactIds: [...targetContactIds],
       targetContactNames: TARGET_CONTACT_NAMES_RAW,
     });
-    await emitContactsForApp(client);
   });
 
   client.on('message', async (message) => {
@@ -966,7 +915,7 @@ function attachClientHandlers(client) {
       console.log('');
     } catch (error) {
       console.error('Failed to process incoming message:', error);
-      emitAppEvent('error', { message: error?.message || String(error) });
+      emitAppEvent('error', { service: 'whatsapp', message: error?.message || String(error) });
     }
   });
 
@@ -1046,10 +995,12 @@ async function runTelegramForever() {
     try {
       await runTelegramSession();
       reconnectAttempts = 0;
+      emitAppEvent('telegram-disconnected');
       console.log('Telegram session ended. Reconnecting...');
     } catch (error) {
       reconnectAttempts += 1;
       const waitMs = reconnectDelayMs(reconnectAttempts);
+      emitAppEvent('telegram-error', { message: error?.message || String(error) });
       console.error(`Telegram connection error: ${error?.message || error}`);
       console.log(`Retrying Telegram in ${Math.round(waitMs / 1000)}s...`);
       await delay(waitMs);
