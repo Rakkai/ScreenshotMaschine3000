@@ -6,11 +6,11 @@ A desktop app that watches WhatsApp Web and Telegram Web and saves screenshots w
 
 This project started as a small defensive tool for a friend who was being harrassed via messengers and needed a way to preserve screenshots in case police or a lawyer ever needed hard evidence to initiate legal action. This extended to messages and chats that were deleted after being sent or read, so preserving them was even harder.
 
-It proved incredibly useful in this context, so we figured we should share it for others to protect themselves, too.
+This tool proved incredibly useful in this context, so we figured we should share it for others to protect themselves, too.
 
 This little tool creates a screenshot of incoming messages from selected contacts on WhatsApp and Telegram. The screenshots are created shortly after receiving them, so later edits and deletions are ignored but the screenshots kept. 
 
-It is intended only for personal, authorized, GDPR-compliant evidence preservation on accounts you control. Keep saved screenshots local and private, and share them only with police, lawyers, courts, or victim-support services when needed.
+It is intended only for personal, authorized, GDPR-compliant evidence preservation on accounts you control. Keep saved screenshots local and private.
 
 ## Important Notice
 
